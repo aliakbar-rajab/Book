@@ -1,31 +1,28 @@
-name: YouTube Downloader
+name: Download Book File
+
 on:
   workflow_dispatch:
     inputs:
-      video_url:
-        description: 'YouTube Video URL'
+      book_url:
+        description: 'Direct download URL for the book'
         required: true
+        type: string
 
 jobs:
   download:
     runs-on: ubuntu-latest
     steps:
-      - name: Install Dependencies
+      - name: Create download directory
+        run: mkdir downloads
+
+      - name: Download the file
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          sudo wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
+          cd downloads
+          # wget --content-disposition tries to get the original filename from the server headers
+          wget --content-disposition "${{ inputs.book_url }}"
 
-      - name: Create Cookies File
-        run: echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
-
-      - name: Download Video
-        run: |
-          yt-dlp --cookies cookies.txt --no-playlist -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" -o "video.%(ext)s" "${{ github.event.inputs.video_url }}"
-
-      - name: Upload Artifact
+      - name: Upload as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: downloaded-video
-          path: video.mp4
+          name: Book-File
+          path: downloads/
