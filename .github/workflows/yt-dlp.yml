@@ -1,34 +1,34 @@
-name: YouTube Downloader
+name: Download YouTube Video
 
 on:
   workflow_dispatch:
     inputs:
-      video_url:
-        description: 'YouTube Video URL'
+      url:
+        description: 'YouTube URL'
         required: true
+      format:
+        description: 'Format (mp4/mp3)'
+        default: 'mp4'
 
 jobs:
   download:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      
       - name: Install yt-dlp and ffmpeg
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
-
-      - name: Download Video
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install -U yt-dlp
+      
+      - name: Download video
         run: |
-          mkdir downloads
-          cd downloads
-          yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" "${{ github.event.inputs.video_url }}"
-
-      - name: Upload Artifact
+          mkdir -p downloads
+          yt-dlp -o "downloads/%(title)s.%(ext)s" "${{ github.event.inputs.url }}"
+      
+      - name: Upload as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: downloaded-video
-          path: downloads/*
+          name: youtube-download
+          path: downloads/
+          retention-days: 7
