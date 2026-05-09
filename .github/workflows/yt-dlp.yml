@@ -26,15 +26,17 @@ jobs:
         env:
           BOOK_URL: ${{ github.event.inputs.url }}
         run: |
-          python3 << 'EOF'
-          import os, json, time, sys, requests
+          python3 << 'SCRIPT'
+          import os, re, json, time, sys, requests
           from urllib.parse import urljoin
           from bs4 import BeautifulSoup
 
-          URL = os.environ["BOOK_URL"]
+          URL = os.environ["BOOK_URL"].strip()
           BOOKS_DIR = "books"
           CACHE_FILE = ".url_cache.json"
           MAX_ATTEMPTS = 10
+          EXTENSIONS = (".pdf", ".epub", ".mobi", ".djvu", ".azw3", ".fb2")
+
           os.makedirs(BOOKS_DIR, exist_ok=True)
 
           cache = {}
@@ -43,84 +45,131 @@ jobs:
                   cache = json.load(f)
 
           session = requests.Session()
-          session.headers.update({"User-Agent": "Mozilla/5.0"})
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          })
 
           def format_size(b):
-              for u in ["B","KB","MB","GB"]:
-                  if b < 1024: return f"{b:.1f}{u}"
+              for u in ["B", "KB", "MB", "GB"]:
+                  if b < 1024:
+                      return f"{b:.1f} {u}"
                   b /= 1024
-              return f"{b:.1f}TB"
-
-          def format_eta(s):
-              if s < 60: return f"{int(s)}s"
-              if s < 3600: return f"{int(s//60)}m{int(s%60)}s"
-              return f"{int(s//3600)}h{int((s%3600)//60)}m"
+              return f"{b:.1f} TB"
 
           def get_filename(resp, url):
               cd = resp.headers.get("Content-Disposition", "")
-              m = __import__("re").search(r'filename="?([^";\n]+)"?', cd)
-              if m: return m.group(1).strip()
-              return url.split("?")[0].split("/")[-1]
+              m = re.search(r'filename[*]?=["\']?(?:UTF-8\'\')?([^";\r\n]+)', cd, re.IGNORECASE)
+              if m:
+                  return m.group(1).strip().strip('"').strip("'")
+              path = url.split("?")[0].split("/")[-1]
+              if path:
+                  return requests.utils.unquote(path)
+              return "book.pdf"
 
+          # Resolve download URL
           if URL in cache:
               download_url = cache[URL]["url"]
               filename = cache[URL]["filename"]
+              print(f"Cache hit: {filename}")
           else:
-              resp = session.get(URL)
+              print(f"Fetching page: {URL}")
+              resp = session.get(URL, timeout=30)
+              resp.raise_for_status()
               soup = BeautifulSoup(resp.text, "html.parser")
-              link = soup.find("a", href=lambda h: h and any(h.endswith(e) for e in [".pdf",".epub",".mobi",".djvu"]))
+
+              link = None
+              for a in soup.find_all("a", href=True):
+                  href = a["href"].lower().split("?")[0]
+                  if any(href.endswith(ext) for ext in EXTENSIONS):
+                      link = a
+                      break
+
               if not link:
-                  sys.exit("No download link found")
+                  print("Page HTML (first 2000 chars):")
+                  print(resp.text[:2000])
+                  sys.exit("ERROR: No download link found on page")
+
               download_url = urljoin(URL, link["href"])
-              head = session.head(download_url, allow_redirects=True)
-              filename = get_filename(head, download_url)
+              print(f"Found link: {download_url}")
+
+              head = session.head(download_url, allow_redirects=True, timeout=30)
+              filename = get_filename(head, str(head.url))
+
               cache[URL] = {"url": download_url, "filename": filename}
               with open(CACHE_FILE, "w") as f:
-                  json.dump(cache, f)
-
+                  json.dump(cache, f, indent=2)
 
           filepath = os.path.join(BOOKS_DIR, filename)
+          print(f"Target: {filepath}")
 
           if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-              print("Already exists")
+              print(f"Already exists ({format_size(os.path.getsize(filepath))}), skipping.")
               sys.exit(0)
 
+          # Download with retry and resume
           for attempt in range(1, MAX_ATTEMPTS + 1):
               try:
                   existing = os.path.getsize(filepath) if os.path.exists(filepath) else 0
-                  headers = {"Range": f"bytes={existing}-"} if existing else {}
-                  resp = session.get(download_url, headers=headers, stream=True)
-                  total = existing + int(resp.headers.get("Content-Length", 0))
+                  headers = {}
+                  if existing > 0:
+                      headers["Range"] = f"bytes={existing}-"
+                      print(f"Resuming from {format_size(existing)}")
+
+                  resp = session.get(download_url, headers=headers, stream=True, timeout=60)
+
+                  # If server doesn't support range, start over
+                  if existing > 0 and resp.status_code == 200:
+                      print("Server doesn't support resume, restarting...")
+                      existing = 0
+                  elif resp.status_code not in (200, 206):
+                      raise Exception(f"HTTP {resp.status_code}")
+
+                  total = int(resp.headers.get("Content-Length", 0)) + existing
                   downloaded = existing
                   start = time.time()
-                  last_print = 0
-                  with open(filepath, "ab") as f:
-                      for chunk in resp.iter_content(8192):
+                  mode = "ab" if resp.status_code == 206 else "wb"
+
+                  with open(filepath, mode) as f:
+                      for chunk in resp.iter_content(chunk_size=65536):
                           if chunk:
                               f.write(chunk)
                               downloaded += len(chunk)
-                              now = time.time()
-                              if now - last_print >= 0.5:
-                                  elapsed = now - start or 0.001
-                                  speed = (downloaded - existing) / elapsed
-                                  pct = downloaded / total * 100 if total else 0
-                                  eta = (total - downloaded) / speed if speed and total else 0
-                                  print(f"\r{pct:.1f}% {format_size(downloaded)}/{format_size(total)} {format_size(speed)}/s ETA:{format_eta(eta)}", end="")
-                                  last_print = now
-                  print(f"\nDone: {filename}")
-                  sys.exit(0)
-              except Exception as e:
-                  wait = min(2 ** attempt, 30)
-                  print(f"\nAttempt {attempt} failed: {e}. Retrying in {wait}s...")
-                  time.sleep(wait)
+                              elapsed = time.time() - start or 0.001
+                              speed = (downloaded - existing) / elapsed
+                              pct = (downloaded / total * 100) if total else 0
+                              eta = ((total - downloaded) / speed) if speed > 0 and total else 0
+                              mins, secs = divmod(int(eta), 60)
+                              print(f"\r  {pct:5.1f}% | {format_size(downloaded)}/{format_size(total)} | {format_size(speed)}/s | ETA {mins}m{secs}s   ", end="", flush=True)
 
-          sys.exit("Download failed after all attempts")
-          EOF
+                  final_size = os.path.getsize(filepath)
+                  if final_size == 0:
+                      os.remove(filepath)
+                      raise Exception("Downloaded file is empty")
+
+                  print(f"\nDone: {filename} ({format_size(final_size)})")
+                  sys.exit(0)
+
+              except (requests.exceptions.RequestException, Exception) as e:
+                  wait = min(2 ** attempt, 60)
+                  print(f"\nAttempt {attempt}/{MAX_ATTEMPTS} failed: {e}")
+                  if attempt < MAX_ATTEMPTS:
+                      print(f"Retrying in {wait}s...")
+                      time.sleep(wait)
+
+          # Clean up partial file on total failure
+          if os.path.exists(filepath):
+              os.remove(filepath)
+          sys.exit("ERROR: Download failed after all attempts")
+          SCRIPT
 
       - name: Commit and push
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add books/ .url_cache.json
-          git diff --cached --quiet || git commit -m "Add book"
-          git push
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "Add book: $(ls books/ | tail -1)"
+            git push
+          fi
