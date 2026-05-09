@@ -22,5 +22,11 @@
     "size": 3912419,
     "md5": "6af7720f6819df1efc73b9c641320024",
     "completed_at": 1778347087.7459967
+  },
+  "https://cdn2.booksdl.lc/get.php?md5=760d5959808ce9be90c67a6930ee0331&key=7IS9F432ERQ817SM": {
+    "path": "downloads/Herbert Bos_ - libgen.li.pdf",
+    "size": 12872877,
+    "md5": "760d5959808ce9be90c67a6930ee0331",
+    "completed_at": 1778347452.6256146
   }
 }
