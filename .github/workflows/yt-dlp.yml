@@ -42,7 +42,7 @@ jobs:
           session.headers["User-Agent"] = "Mozilla/5.0"
 
           def format_size(b):
-              for u in ["B","KB","MB","GB"]:
+              for u in ["B", "KB", "MB", "GB"]:
                   if b < 1024: return f"{b:.1f}{u}"
                   b /= 1024
               return f"{b:.1f}TB"
