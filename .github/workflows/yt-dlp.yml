@@ -1,170 +1,179 @@
-name: Download Book to Repo
+name: Download Book
 
 on:
   workflow_dispatch:
     inputs:
-      book_url:
-        description: 'URL of the book page (or direct link)'
+      url:
+        description: 'Book URL'
         required: true
-        type: string
 
 jobs:
-  download_book:
+  download:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: Install Dependencies
-        run: pip install requests beautifulsoup4
+      - name: Install dependencies
+        run: pip install requests
 
-      - name: Create Books Directory
-        run: mkdir -p books
-
-      - name: Download Book
-        env:
-          BOOK_URL: ${{ github.event.inputs.book_url }}
+      - name: Download book
         run: |
-          python - << 'EOF'
+          python - "${{ github.event.inputs.url }}" << 'EOF'
+          import sys
           import os
-          import time
-          import requests
-          from bs4 import BeautifulSoup
-          from urllib.parse import urljoin, unquote
           import re
+          import time
+          import json
+          import requests
 
-          url = os.environ.get('BOOK_URL')
-          headers = {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-          }
-          session = requests.Session()
+          BOOKS_DIR = "books"
+          CACHE_FILE = ".url_cache.json"
+          os.makedirs(BOOKS_DIR, exist_ok=True)
 
-          def fetch_html(target_url):
-              for attempt in range(5):
-                  try:
-                      print(f"Fetching page (Attempt {attempt + 1}/5): {target_url}")
-                      response = session.get(target_url, headers=headers, allow_redirects=True, timeout=30)
-                      response.raise_for_status()
-                      return response
-                  except Exception as e:
-                      print(f"Error: {e}")
-                      time.sleep(5)
-              raise Exception("Failed to fetch page after 5 attempts.")
+          def load_cache():
+              if os.path.exists(CACHE_FILE):
+                  with open(CACHE_FILE) as f:
+                      return json.load(f)
+              return {}
 
-          def download_with_resume(download_url, filepath, max_attempts=10):
-              """Download a file with resume support using HTTP Range requests."""
+          def save_cache(cache):
+              with open(CACHE_FILE, "w") as f:
+                  json.dump(cache, f, indent=2)
+
+          def format_size(b):
+              for unit in ("B", "KiB", "MiB", "GiB"):
+                  if b < 1024:
+                      return f"{b:.1f} {unit}"
+                  b /= 1024
+              return f"{b:.1f} TiB"
+
+          def format_eta(seconds):
+              if seconds < 60:
+                  return f"{int(seconds)}s"
+              elif seconds < 3600:
+                  return f"{int(seconds//60)}m{int(seconds%60)}s"
+              else:
+                  return f"{int(seconds//3600)}h{int((seconds%3600)//60)}m"
+
+          def print_progress(downloaded, total, speed, elapsed):
+              if total:
+                  pct = downloaded / total * 100
+                  eta = (total - downloaded) / speed if speed > 0 else 0
+                  bar_len = 30
+                  filled = int(bar_len * downloaded / total)
+                  bar = "█" * filled + "░" * (bar_len - filled)
+                  print(
+                      f"\r[{bar}] {pct:5.1f}% of {format_size(total)}"
+                      f" at {format_size(speed)}/s ETA {format_eta(eta)}",
+                      end="", flush=True
+                  )
+              else:
+                  print(f"\r{format_size(downloaded)} downloaded at {format_size(speed)}/s", end="", flush=True)
+
+          def fetch_html(session, url, max_attempts=5):
               for attempt in range(max_attempts):
-                  # Check how many bytes we already have
-                  existing_bytes = os.path.getsize(filepath) if os.path.exists(filepath) else 0
-
-                  req_headers = {**headers}
-                  if existing_bytes > 0:
-                      req_headers['Range'] = f'bytes={existing_bytes}-'
-                      print(f"Resuming from byte {existing_bytes} (Attempt {attempt + 1}/{max_attempts})...")
-                  else:
-                      print(f"Starting download (Attempt {attempt + 1}/{max_attempts})...")
-
                   try:
-                      resp = session.get(
-                          download_url,
-                          headers=req_headers,
-                          stream=True,
-                          timeout=60  # per-chunk timeout, not total
-                      )
+                      resp = session.get(url, timeout=30)
+                      resp.raise_for_status()
+                      return resp.text
+                  except Exception as e:
+                      if attempt < max_attempts - 1:
+                          time.sleep(5)
+                      else:
+                          raise
 
-                      # 206 = partial content (resume), 200 = full content
-                      if resp.status_code == 200 and existing_bytes > 0:
-                          # Server doesn't support Range, restart from scratch
-                          print("Server doesn't support resume, restarting...")
-                          existing_bytes = 0
+          def resolve_filename(session, url, cache):
+              if url in cache:
+                  return cache[url]
+              try:
+                  resp = session.head(url, timeout=15, allow_redirects=True)
+                  cd = resp.headers.get("Content-Disposition", "")
+                  m = re.search(r"filename\*=UTF-8''(.+)", cd) or re.search(r'filename="?([^"]+)"?', cd)
+                  if m:
+                      from urllib.parse import unquote
+                      name = unquote(m.group(1).strip())
+                  else:
+                      name = url.split("/")[-1].split("?")[0] or "book"
+              except Exception:
+                  name = url.split("/")[-1].split("?")[0] or "book"
+              cache[url] = name
+              save_cache(cache)
+              return name
+
+          def download_with_resume(session, url, filepath, max_attempts=10):
+              for attempt in range(max_attempts):
+                  try:
+                      existing = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+                      headers = {"Range": f"bytes={existing}-"} if existing else {}
+                      resp = session.get(url, headers=headers, stream=True, timeout=60)
+
+                      if existing and resp.status_code == 200:
+                          existing = 0  # server doesn't support resume, restart
 
                       resp.raise_for_status()
 
-                      mode = 'ab' if existing_bytes > 0 and resp.status_code == 206 else 'wb'
+                      total = int(resp.headers.get("Content-Length", 0))
+                      if existing:
+                          total += existing
+
+                      mode = "ab" if existing else "wb"
+                      downloaded = existing
+                      start = time.time()
+                      last_time = start
+                      last_bytes = existing
+                      speed = 0
+
                       with open(filepath, mode) as f:
                           for chunk in resp.iter_content(chunk_size=65536):
                               if chunk:
                                   f.write(chunk)
+                                  downloaded += len(chunk)
+                                  now = time.time()
+                                  if now - last_time >= 0.5:
+                                      speed = (downloaded - last_bytes) / (now - last_time)
+                                      last_time = now
+                                      last_bytes = downloaded
+                                  print_progress(downloaded, total, speed, now - start)
 
-                      print(f"Download complete: {filepath}")
-                      return True
+                      print()  # newline after progress bar
+                      return
 
                   except Exception as e:
-                      print(f"Download interrupted at byte "
-                            f"{os.path.getsize(filepath) if os.path.exists(filepath) else 0}: {e}")
-                      wait = min(30, 5 * (attempt + 1))
-                      print(f"Waiting {wait}s before retry...")
-                      time.sleep(wait)
+                      print(f"\nAttempt {attempt+1} failed: {e}")
+                      if attempt < max_attempts - 1:
+                          wait = min(30, 5 * (attempt + 1))
+                          print(f"Retrying in {wait}s...")
+                          time.sleep(wait)
+                      else:
+                          raise
 
-              return False
+          # --- main ---
+          url = sys.argv[1]
+          session = requests.Session()
+          cache = load_cache()
 
-          # --- Resolve download URL ---
-          response = fetch_html(url)
-          download_url = url
-          content_type = response.headers.get('Content-Type', '').lower()
+          print(f"Resolving filename for: {url}")
+          filename = resolve_filename(session, url, cache)
+          filepath = os.path.join(BOOKS_DIR, filename)
 
-          if 'text/html' in content_type:
-              print("HTML page detected, searching for download link...")
-              soup = BeautifulSoup(response.text, 'html.parser')
+          if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+              print(f"Already exists, skipping: {filename}")
+              sys.exit(0)
 
-              link = soup.find('a', string=re.compile(r'^get$', re.IGNORECASE))
-              if not link:
-                  link = soup.find('a', href=re.compile(r'\.(pdf|epub|mobi)$', re.IGNORECASE))
-
-              if link and link.get('href'):
-                  download_url = urljoin(url, link.get('href'))
-                  print(f"Found download link: {download_url}")
-              else:
-                  print("No specific download link found, trying original URL.")
-
-          # --- Determine filename ---
-          print(f"Resolving filename from: {download_url}")
-          filename = None
-          try:
-              head_resp = session.head(download_url, headers=headers, allow_redirects=True, timeout=30)
-              cd = head_resp.headers.get('Content-Disposition', '')
-              match = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)', cd, re.IGNORECASE)
-              if match:
-                  filename = unquote(match.group(1).strip())
-          except Exception as e:
-              print(f"HEAD request failed: {e}")
-
-          if not filename:
-              filename = unquote(download_url.split('/')[-1].split('?')[0])
-          if '.' not in filename:
-              filename = 'downloaded_book.pdf'
-
-          filename = re.sub(r'[\\/*?:"<>|]', "", filename).strip()
-          filepath = os.path.join('books', filename)
-          print(f"Saving to: {filepath}")
-
-          # --- Download ---
-          success = download_with_resume(download_url, filepath, max_attempts=10)
-          if not success:
-              raise Exception("Failed to download file after all attempts.")
+          print(f"Downloading: {filename}")
+          download_with_resume(session, url, filepath)
+          print(f"Saved to: {filepath}")
           EOF
 
-      - name: Commit and Push Book
+      - name: Commit and push
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add books/
-
-          if git diff --cached --quiet; then
-            echo "No new files to commit."
-          else
-            git commit -m "Add downloaded book"
-            git push
-            echo "Book successfully pushed to repository."
-          fi
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add books/ .url_cache.json
+          git diff --cached --quiet || git commit -m "Add: ${{ github.event.inputs.url }}"
+          git push
