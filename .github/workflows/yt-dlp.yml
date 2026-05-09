@@ -1,34 +1,12 @@
-name: Download Book
-
-on:
-  workflow_dispatch:
-    inputs:
-      url:
-        description: 'Book page URL'
-        required: true
-
-permissions:
-  contents: write
-
-jobs:
-  download:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - run: pip install requests beautifulsoup4
-
       - name: Download book
+        env:
+          BOOK_URL: ${{ github.event.inputs.url }}
         run: |
           python3 << 'EOF'
           import os, json, time, re, requests
           from bs4 import BeautifulSoup
 
-          URL = "${{ github.event.inputs.url }}"
+          URL = os.environ["BOOK_URL"]
           BOOKS_DIR = "books"
           CACHE_FILE = ".url_cache.json"
           os.makedirs(BOOKS_DIR, exist_ok=True)
@@ -60,7 +38,8 @@ jobs:
               return os.path.basename(resp.url.split("?")[0]) or "book"
 
           if URL in cache:
-              download_url, filename = cache[URL]["url"], cache[URL]["filename"]else:
+              download_url = cache[URL]["url"]
+              filename = cache[URL]["filename"]else:
               r = session.get(URL, timeout=(10, 30))
               soup = BeautifulSoup(r.text, "html.parser")
               link = soup.find("a", href=re.compile(r'\.(pdf|epub|mobi|djvu)', re.I))
@@ -122,11 +101,3 @@ jobs:
           else:
               raise SystemExit("Download failed after all attempts")
           EOF
-
-      - name: Commit and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add books/ .url_cache.json
-          git diff --cached --quiet || git commit -m "Add downloaded book"
-          git push
