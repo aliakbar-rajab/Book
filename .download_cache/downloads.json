@@ -29,10 +29,16 @@
     "md5": "760d5959808ce9be90c67a6930ee0331",
     "completed_at": 1778347452.6256146
   },
-  "https://cdn2.booksdl.lc/get.php?md5=8c29865b1b0f4e5c431ff1adf2a55f76&key=XGPP14644AX3KSV2": {
-    "path": "downloads/Roger Pressman, Bruce Maxim - Software Engineering_ A Practitioner's Approach (2019, McGraw-Hill Education) - libgen.li.pdf",
-    "size": 28219150,
-    "md5": "8c29865b1b0f4e5c431ff1adf2a55f76",
-    "completed_at": 1778347816.5034535
+  "https://cdn3.booksdl.lc/get.php?md5=c8bbf760992831c293468dd825242ecd&key=ZZLWZTS4HY65V38L": {
+    "path": "downloads/Ian Sommerville - Engineering software products. An Introduction to Modern Software Engineering (2020, Pearson) - libgen.li.pdf",
+    "size": 8948492,
+    "md5": "c8bbf760992831c293468dd825242ecd",
+    "completed_at": 1778347929.8716424
+  },
+  "https://cdn5.booksdl.lc/get.php?md5=debfd1b1319ca722edb7ce7ede4c63c9&key=VJV9ESDPYSJ9XUH6": {
+    "path": "downloads/[Springer Series in Statistics - Springer Series in Statistics] The Elements of Statistical Learning_ Data Mining, Inference, and Prediction{Trevor Hastie, Robert Tibshirani, Jerome Friedman}(2017.pdf",
+    "size": 13399454,
+    "md5": "debfd1b1319ca722edb7ce7ede4c63c9",
+    "completed_at": 1778348027.414138
   }
 }
