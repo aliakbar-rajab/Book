@@ -64,15 +64,6 @@ jobs:
           path: .download_cache
           key: libgen-cache-${{ github.run_id }}
           
-      - name: Configure Git LFS for large files
-        run: |
-          if [ -d "${{ github.event.inputs.output_dir || 'downloads' }}" ]; then
-            sudo apt-get update && sudo apt-get install -y git-lfs
-            git lfs install
-            git lfs track "*.pdf" "*.epub" "*.mobi" "*.azw3" "*.djvu" "*.zip"
-            git add .gitattributes || true
-          fi
-          
       - name: Commit downloaded book
         run: |
           git config user.name "github-actions[bot]"
