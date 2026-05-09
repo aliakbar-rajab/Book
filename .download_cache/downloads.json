@@ -10,5 +10,11 @@
     "size": 10949734,
     "md5": "d3848357ae109884a140c7b3662e0e30",
     "completed_at": 1778346292.7137191
+  },
+  "https://cdn2.booksdl.lc/get.php?md5=7690623e0b7e0c153ca2e29ab09f6891&key=UX7DZ0Q6XIR798YC": {
+    "path": "downloads/Randal E. Bryant, David R. O'Hallaron - Computer Systems_ A Programmer's Perspective (2015, Pearson Education (US)) - libgen.li.pdf",
+    "size": 46789322,
+    "md5": "7690623e0b7e0c153ca2e29ab09f6891",
+    "completed_at": 1778346930.0766056
   }
 }
