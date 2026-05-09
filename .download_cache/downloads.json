@@ -29,16 +29,10 @@
     "md5": "760d5959808ce9be90c67a6930ee0331",
     "completed_at": 1778347452.6256146
   },
-  "https://cdn3.booksdl.lc/get.php?md5=c8bbf760992831c293468dd825242ecd&key=ZZLWZTS4HY65V38L": {
-    "path": "downloads/Ian Sommerville - Engineering software products. An Introduction to Modern Software Engineering (2020, Pearson) - libgen.li.pdf",
-    "size": 8948492,
-    "md5": "c8bbf760992831c293468dd825242ecd",
-    "completed_at": 1778347929.8716424
-  },
-  "https://cdn5.booksdl.lc/get.php?md5=debfd1b1319ca722edb7ce7ede4c63c9&key=VJV9ESDPYSJ9XUH6": {
-    "path": "downloads/[Springer Series in Statistics - Springer Series in Statistics] The Elements of Statistical Learning_ Data Mining, Inference, and Prediction{Trevor Hastie, Robert Tibshirani, Jerome Friedman}(2017.pdf",
-    "size": 13399454,
-    "md5": "debfd1b1319ca722edb7ce7ede4c63c9",
-    "completed_at": 1778348027.414138
+  "https://cdn2.booksdl.lc/get.php?md5=032ee62576302e880c39607600b19582&key=DVOAY6H8105HCB2W": {
+    "path": "downloads/Hyrum Wright_Tom Manshreck_Titus Winters - Software Engineering at Google_ Lessons Learned from Programming Over Time (4 Apr 2020, O'Reilly Media, Inc.) - libgen.li.pdf",
+    "size": 7812038,
+    "md5": "032ee62576302e880c39607600b19582",
+    "completed_at": 1778348227.3075244
   }
 }
