@@ -16,5 +16,11 @@
     "size": 46789322,
     "md5": "7690623e0b7e0c153ca2e29ab09f6891",
     "completed_at": 1778346930.0766056
+  },
+  "https://cdn2.booksdl.lc/get.php?md5=6af7720f6819df1efc73b9c641320024&key=PKH809WH3W34YLFU": {
+    "path": "downloads/Bjarne Stroustrup - Programming_ Principles and Practice Using C++ (2024, Addison-Wesley Professional) - libgen.li.pdf",
+    "size": 3912419,
+    "md5": "6af7720f6819df1efc73b9c641320024",
+    "completed_at": 1778347087.7459967
   }
 }
