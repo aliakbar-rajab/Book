@@ -28,5 +28,11 @@
     "size": 12872877,
     "md5": "760d5959808ce9be90c67a6930ee0331",
     "completed_at": 1778347452.6256146
+  },
+  "https://cdn2.booksdl.lc/get.php?md5=8c29865b1b0f4e5c431ff1adf2a55f76&key=XGPP14644AX3KSV2": {
+    "path": "downloads/Roger Pressman, Bruce Maxim - Software Engineering_ A Practitioner's Approach (2019, McGraw-Hill Education) - libgen.li.pdf",
+    "size": 28219150,
+    "md5": "8c29865b1b0f4e5c431ff1adf2a55f76",
+    "completed_at": 1778347816.5034535
   }
 }
