@@ -28,7 +28,8 @@ jobs:
           import os, json, time, re, requests
           from bs4 import BeautifulSoup
 
-          URL = "${{ github.event.inputs.url }}"BOOKS_DIR = "books"
+          URL = "${{ github.event.inputs.url }}"
+          BOOKS_DIR = "books"
           CACHE_FILE = ".url_cache.json"
           os.makedirs(BOOKS_DIR, exist_ok=True)
 
@@ -58,7 +59,6 @@ jobs:
                   return re.sub(r'[\\/*?:"<>|]', "_", m.group(1).strip())
               return os.path.basename(resp.url.split("?")[0]) or "book"
 
-          # Resolve download link
           if URL in cache:
               download_url, filename = cache[URL]["url"], cache[URL]["filename"]else:
               r = session.get(URL, timeout=(10, 30))
@@ -75,12 +75,10 @@ jobs:
 
           filepath = os.path.join(BOOKS_DIR, filename)
 
-          # Skip if already downloaded
           if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
               print(f"Already exists: {filename}")
               raise SystemExit(0)
 
-          # Resumable download
           MAX_ATTEMPTS = 10
           CHUNK = 65536
 
@@ -106,7 +104,8 @@ jobs:
                           if elapsed >= 0.5:
                               speed = (downloaded - last_bytes) / elapsed
                               last_bytes = downloaded
-                              last_time = nowpct = downloaded / total * 100 if total else 0
+                              last_time = now
+                          pct = downloaded / total * 100 if total else 0
                           eta = (total - downloaded) / speed if speed > 0 else 0
                           bar = "█" * int(pct // 5) + "░" * (20 - int(pct // 5))
                           print(f"\r[{bar}] {pct:.1f}% {format_size(downloaded)}/{format_size(total)} "
