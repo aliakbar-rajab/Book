@@ -1,28 +1,96 @@
-name: Download Book File
+name: Book Downloader
 
 on:
   workflow_dispatch:
     inputs:
       book_url:
-        description: 'Direct download URL for the book'
+        description: 'URL of the book page or download link'
         required: true
         type: string
 
 jobs:
-  download:
+  download-book:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Create download directory
-        run: mkdir downloads
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Download the file
+      - name: Install Dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Download Book
+        env:
+          BOOK_URL: ${{ inputs.book_url }}
         run: |
-          cd downloads
-          # wget --content-disposition tries to get the original filename from the server headers
-          wget --content-disposition "${{ inputs.book_url }}"
+          python -c '
+          import os
+          import requests
+          from bs4 import BeautifulSoup
+          from urllib.parse import urljoin
+          
+          url = os.environ["BOOK_URL"]
+          headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+          
+          print(f"Fetching {url}...")
+          session = requests.Session()
+          response = session.get(url, headers=headers, allow_redirects=True)
+          response.raise_for_status()
+          
+          # If the URL is already a direct file, download it
+          content_type = response.headers.get("Content-Type", "")
+          if "application/pdf" in content_type or "application/epub+zip" in content_type:
+              download_url = url
+          else:
+              # It is an intermediary page, parse it to find the download link
+              soup = BeautifulSoup(response.text, "html.parser")
+              download_link = None
+              
+              # Look for common libgen/download link patterns
+              for a in soup.find_all("a", href=True):
+                  text = a.text.lower()
+                  href = a["href"]
+                  if text == "get" or href.endswith(".pdf") or href.endswith(".epub"):
+                      download_link = urljoin(url, href)
+                      break
+              
+              if not download_link:
+                  raise Exception("Could not find a valid download link on the page.")
+              
+              print(f"Found direct link: {download_link}")
+              download_url = download_link
+              response = session.get(download_url, headers=headers, stream=True)
+              response.raise_for_status()
+          
+          # Extract filename
+          filename = "downloaded_book"
+          cd = response.headers.get("content-disposition")
+          if cd and "filename=" in cd:
+              filename = cd.split("filename=")[1].strip("\"'")
+          else:
+              filename = download_url.split("/")[-1].split("?")[0]
+              if not filename.endswith((".pdf", ".epub")):
+                  filename += ".pdf" # Default fallback
+          
+          print(f"Downloading to {filename}...")
+          with open(filename, "wb") as f:
+              for chunk in response.iter_content(chunk_size=8192):
+                  f.write(chunk)
+          
+          print("Download complete.")
+          with open("output_filename.txt", "w") as f:
+              f.write(filename)
+          '
 
-      - name: Upload as Artifact
+      - name: Read filename
+        id: get_filename
+        run: echo "FILE_NAME=$(cat output_filename.txt)" >> $GITHUB_ENV
+
+      - name: Upload Book as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Book-File
-          path: downloads/
+          name: ${{ env.FILE_NAME }}
+          path: ${{ env.FILE_NAME }}
+          retention-days: 5
