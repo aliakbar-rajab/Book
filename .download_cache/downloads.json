@@ -34,5 +34,11 @@
     "size": 7812038,
     "md5": "032ee62576302e880c39607600b19582",
     "completed_at": 1778348227.3075244
+  },
+  "https://cdn3.booksdl.lc/get.php?md5=a8c480913764ef718b120b5d337609aa&key=2D45NLOZNX75CFXP": {
+    "path": "downloads/[What's New in Computer Science] Vipin Kumar, Pang-Ning Tan, Michael Steinback, Anuj Karpatne - Introduction to Data Mining (2018, Pearson) - libgen.li.pdf",
+    "size": 27655434,
+    "md5": "a8c480913764ef718b120b5d337609aa",
+    "completed_at": 1778349723.3406544
   }
 }
