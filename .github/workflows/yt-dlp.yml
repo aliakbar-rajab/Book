@@ -64,7 +64,8 @@ jobs:
 
           if URL in cache:
               download_url = cache[URL]["url"]
-              filename = cache[URL]["filename"]else:
+              filename = cache[URL]["filename"]
+          else:
               resp = session.get(URL)
               soup = BeautifulSoup(resp.text, "html.parser")
               link = soup.find("a", href=lambda h: h and any(h.endswith(e) for e in [".pdf",".epub",".mobi",".djvu"]))
@@ -76,6 +77,7 @@ jobs:
               cache[URL] = {"url": download_url, "filename": filename}
               with open(CACHE_FILE, "w") as f:
                   json.dump(cache, f)
+
 
           filepath = os.path.join(BOOKS_DIR, filename)
 
