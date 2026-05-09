@@ -12,7 +12,7 @@ jobs:
   download_book:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to push commits to the repo
+      contents: write
 
     steps:
       - name: Checkout Repository
@@ -37,11 +37,11 @@ jobs:
         run: |
           python - << 'EOF'
           import os
+          import time
           import requests
           from bs4 import BeautifulSoup
-          from urllib.parse import urljoin
+          from urllib.parse import urljoin, unquote
           import re
-          from urllib.parse import unquote
 
           url = os.environ.get('BOOK_URL')
           headers = {
@@ -49,10 +49,20 @@ jobs:
           }
           session = requests.Session()
 
-          print(f"Fetching initial URL: {url}")
-          response = session.get(url, headers=headers, allow_redirects=True, timeout=120)
-          response.raise_for_status()
+          # Helper function to fetch page with retries
+          def fetch_url(target_url):
+              for attempt in range(5):
+                  try:
+                      print(f"Fetching URL (Attempt {attempt + 1}/5): {target_url}")
+                      response = session.get(target_url, headers=headers, allow_redirects=True, timeout=120)
+                      response.raise_for_status()
+                      return response
+                  except Exception as e:
+                      print(f"Error fetching URL: {e}")
+                      time.sleep(5)
+              raise Exception("Failed to fetch URL after 5 attempts.")
 
+          response = fetch_url(url)
           download_url = url
           content_type = response.headers.get('Content-Type', '').lower()
 
@@ -70,45 +80,60 @@ jobs:
               else:
                   print("Could not find a specific download link. Trying original URL.")
 
+          # Determine filename
           print(f"Starting download from: {download_url}")
-          dl_response = session.get(download_url, headers=headers, stream=True, timeout=120)
-          dl_response.raise_for_status()
-
-          filename = 'downloaded_book.pdf'
-          if 'Content-Disposition' in dl_response.headers:
-              cd = dl_response.headers.get('Content-Disposition')
-              match = re.search(r'filename="?([^";]+)"?', cd)
-              if match:
-                  filename = match.group(1)
-          else:
-              parsed_name = unquote(download_url.split('/')[-1].split('?')[0])
-              if '.' in parsed_name:
-                  filename = parsed_name
+          try:
+              head_resp = session.head(download_url, headers=headers, allow_redirects=True, timeout=30)
+              if 'Content-Disposition' in head_resp.headers:
+                  cd = head_resp.headers.get('Content-Disposition')
+                  match = re.search(r'filename="?([^";]+)"?', cd)
+                  if match:
+                      filename = match.group(1)
+                  else:
+                      filename = unquote(download_url.split('/')[-1].split('?')[0])
+              else:
+                  filename = unquote(download_url.split('/')[-1].split('?')[0])
+          except:
+              filename = unquote(download_url.split('/')[-1].split('?')[0])
+          
+          if not '.' in filename:
+              filename = 'downloaded_book.pdf'
 
           # Sanitize filename
           filename = re.sub(r'[\\/*?:"<>|]', "", filename)
-          
-          # Save inside the 'books' folder
           filepath = os.path.join('books', filename)
 
-          with open(filepath, 'wb') as f:
-              for chunk in dl_response.iter_content(chunk_size=8192):
-                  if chunk:
-                      f.write(chunk)
-
-          print(f"Successfully downloaded to: {filepath}")
+          # Download file with retries
+          download_success = False
+          for attempt in range(5):
+              try:
+                  print(f"Downloading file (Attempt {attempt + 1}/5)...")
+                  dl_response = session.get(download_url, headers=headers, stream=True, timeout=120)
+                  dl_response.raise_for_status()
+                  
+                  with open(filepath, 'wb') as f:
+                      for chunk in dl_response.iter_content(chunk_size=8192):
+                          if chunk:
+                              f.write(chunk)
+                  
+                  download_success = True
+                  print(f"Successfully downloaded to: {filepath}")
+                  break
+              except Exception as e:
+                  print(f"Download interrupted: {e}")
+                  time.sleep(5)
+          
+          if not download_success:
+              raise Exception("Failed to download file completely after 5 attempts.")
           EOF
 
       - name: Commit and Push Book
         run: |
-          # Configure Git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          # Add the books folder
           git add books/
           
-          # Check if there are changes to commit
           if git diff --cached --quiet; then
             echo "No new files to commit."
           else
