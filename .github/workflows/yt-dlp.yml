@@ -1,10 +1,10 @@
-name: Download Book
+name: Download Books
 
 on:
   workflow_dispatch:
     inputs:
       book_url:
-        description: "Book URL"
+        description: 'Book download URL'
         required: true
         type: string
 
@@ -12,307 +12,299 @@ jobs:
   download:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4 lxml tqdm
+
+    - name: Download book
+      env:
+        BOOK_URL: ${{ github.event.inputs.book_url }}
+      run: |
+        python << 'EOF'
+        import os
+        import re
+        import json
+        import time
+        import requests
+        from bs4 import BeautifulSoup
+        from pathlib import Path
+        from urllib.parse import urlparse, urljoin, unquote
+        from tqdm import tqdm
+
+        CACHE_FILE = "download_cache.json"
+        MAX_RETRIES = 15
+        CHUNK_SIZE = 1024 * 256
+        TIMEOUT = 60
+        RETRY_DELAY = 8
+
+        session = requests.Session()
+
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0 Safari/537.36"
+            )
+        })
+
+        def load_cache():
+            if Path(CACHE_FILE).exists():
+                with open(CACHE_FILE, "r") as f:
+                    return json.load(f)
+            return {}
+
+        def save_cache(cache):
+            with open(CACHE_FILE, "w") as f:
+                json.dump(cache, f, indent=2)
+
+        def sanitize_filename(name):
+            name = re.sub(r'[<>:"/\\|?*]', "_", name)
+            name = re.sub(r"\s+", " ", name)
+            return name.strip(" ._")
+
+        def format_size(size):
+            for unit in ["B", "KB", "MB", "GB"]:
+                if size < 1024:
+                    return f"{size:.1f}{unit}"
+                size /= 1024
+            return f"{size:.1f}TB"
+
+        def filename_from_headers(resp):
+            cd = resp.headers.get("content-disposition", "")
+            match = re.search(r'filename="?([^"]+)"?', cd)
+            if match:
+                return sanitize_filename(unquote(match.group(1)))
+            return None
+
+        def filename_from_url(url):
+            path = unquote(urlparse(url).path)
+            name = os.path.basename(path)
+
+            if not name or "." not in name:
+                return f"book_{int(time.time())}.epub"
+
+            return sanitize_filename(name)
+
+        def is_binary(content_type, first_bytes):
+            ct = (content_type or "").lower()
+
+            if any(x in ct for x in [
+                "application/epub",
+                "application/pdf",
+                "application/octet-stream",
+                "application/x-mobipocket",
+                "application/zip"
+            ]):
+                return True
+
+            if first_bytes.startswith(b"PK"):
+                return True
+
+            if first_bytes.startswith(b"%PDF"):
+                return True
+
+            return False
+
+        def find_download_link(url):
+            print(f"Checking: {url}")
+
+            r = session.get(url, timeout=TIMEOUT, stream=True, allow_redirects=True)
+            r.raise_for_status()
+
+            content_type = r.headers.get("content-type", "")
+            first_bytes = r.raw.read(16)
+
+            if is_binary(content_type, first_bytes):
+                print("✓ Direct file detected")
+                return r.url
+
+            r.close()
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+            r = session.get(url, timeout=TIMEOUT)
+            r.raise_for_status()
 
-      - name: Install dependencies
-        run: pip install requests beautifulsoup4 lxml
+            soup = BeautifulSoup(r.text, "lxml")
 
-      - name: Download book
-        env:
-          BOOK_URL: ${{ inputs.book_url }}
-        run: |
-          python << 'PYTHON'
-          import os
-          import re
-          import json
-          import time
-          import hashlib
-          from pathlib import Path
-          from urllib.parse import urljoin, unquote
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
 
-          import requests
-          from bs4 import BeautifulSoup
+                if any(x in href.lower() for x in [
+                    "/get.php",
+                    ".epub",
+                    ".pdf",
+                    ".mobi",
+                    ".azw3"
+                ]):
+                    final = urljoin(url, href)
+                    print(f"✓ Found download link")
+                    return final
 
-          BOOK_URL = os.environ["BOOK_URL"].strip()
+            matches = re.findall(
+                r'https?://[^\s"\']+',
+                r.text
+            )
 
-          USER_AGENT = (
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-              "AppleWebKit/537.36 (KHTML, like Gecko) "
-              "Chrome/124.0 Safari/537.36"
-          )
+            for m in matches:
+                if any(x in m.lower() for x in [
+                    ".epub",
+                    ".pdf",
+                    ".mobi",
+                    "/get.php"
+                ]):
+                    print(f"✓ Found regex link")
+                    return m
 
-          EXTENSIONS = [".epub", ".pdf", ".mobi", ".azw3", ".fb2"]
-          MAX_RETRIES = 5
+            raise Exception("No download link found")
 
-          session = requests.Session()
-          session.headers.update({
-              "User-Agent": USER_AGENT
-          })
+        def download_with_resume(url, filename):
+            temp_file = filename + ".part"
 
-          books_dir = Path("books")
-          books_dir.mkdir(exist_ok=True)
+            existing_size = 0
 
-          cache_file = Path("download_cache.json")
+            if os.path.exists(temp_file):
+                existing_size = os.path.getsize(temp_file)
 
-          if cache_file.exists():
-              try:
-                  cache = json.loads(cache_file.read_text(encoding="utf-8"))
-              except:
-                  cache = {}
-          else:
-              cache = {}
+            headers = {}
 
-          url_hash = hashlib.md5(BOOK_URL.encode()).hexdigest()
+            if existing_size > 0:
+                headers["Range"] = f"bytes={existing_size}-"
+                print(f"Resuming from {format_size(existing_size)}")
 
-          if url_hash in cache:
-              print("Already downloaded")
-              raise SystemExit(0)
+            response = session.get(
+                url,
+                stream=True,
+                timeout=TIMEOUT,
+                headers=headers,
+                allow_redirects=True
+            )
 
-          def sanitize(name):
-              return re.sub(r'[<>:"/\\|?*]+', '_', name).strip()
+            if response.status_code not in [200, 206]:
+                raise Exception(f"HTTP {response.status_code}")
 
-          def detect_extension(content_type, filename=""):
-              ct = content_type.lower()
+            total_size = int(response.headers.get("content-length", 0))
 
-              if filename:
-                  for ext in EXTENSIONS:
-                      if filename.lower().endswith(ext):
-                          return ext
+            if response.status_code == 206:
+                total_size += existing_size
+            else:
+                existing_size = 0
 
-              if "pdf" in ct:
-                  return ".pdf"
+            server_filename = filename_from_headers(response)
+            if server_filename:
+                filename = server_filename
+                temp_file = filename + ".part"
 
-              if "epub" in ct or "zip" in ct:
-                  return ".epub"
+            mode = "ab" if existing_size > 0 else "wb"
 
-              if "mobi" in ct:
-                  return ".mobi"
+            print(f"Downloading: {filename}")
 
-              return ".epub"
+            with open(temp_file, mode) as f:
+                progress = tqdm(
+                    total=total_size,
+                    initial=existing_size,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    ascii=True,
+                    dynamic_ncols=True
+                )
 
-          def extract_filename(response, url):
-              cd = response.headers.get("content-disposition", "")
+                downloaded = existing_size
+                last_update = time.time()
 
-              match = re.search(
-                  r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';]+)',
-                  cd,
-                  re.I
-              )
+                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                    if chunk:
+                        f.write(chunk)
 
-              if match:
-                  return sanitize(unquote(match.group(1)))
+                        chunk_len = len(chunk)
+                        downloaded += chunk_len
 
-              name = sanitize(unquote(url.split("/")[-1]))
+                        progress.update(chunk_len)
 
-              if any(name.lower().endswith(x) for x in EXTENSIONS):
-                  return name
+                        now = time.time()
 
-              ext = detect_extension(response.headers.get("content-type", ""))
-              return f"book_{int(time.time())}{ext}"
+                        if now - last_update > 5:
+                            speed = downloaded / max((now - start_time), 1)
 
-          def save_response_content(response, path):
-              with open(path, "wb") as f:
-                  for chunk in response.iter_content(chunk_size=65536):
-                      if chunk:
-                          f.write(chunk)
+                            print(
+                                f"\nDownloaded {format_size(downloaded)} "
+                                f"at {format_size(speed)}/s"
+                            )
 
-              if path.stat().st_size == 0:
-                  raise Exception("Downloaded file is empty")
+                            last_update = now
 
-          def is_html(response, first_bytes):
-              ct = response.headers.get("content-type", "").lower()
+                progress.close()
 
-              if "text/html" in ct:
-                  return True
+            os.rename(temp_file, filename)
 
-              try:
-                  text = first_bytes.decode("utf-8", errors="ignore").lower()
+            final_size = os.path.getsize(filename)
 
-                  if "<html" in text or "<!doctype" in text:
-                      return True
-              except:
-                  pass
+            print(f"✓ Finished: {filename}")
+            print(f"✓ Size: {format_size(final_size)}")
 
-              return False
+            return filename
 
-          def find_download_link(html, base_url):
-              soup = BeautifulSoup(html, "lxml")
+        cache = load_cache()
 
-              candidates = []
+        book_url = os.environ["BOOK_URL"]
 
-              for tag in soup.find_all("a", href=True):
-                  href = tag["href"]
+        if book_url in cache:
+            print("Already downloaded:")
+            print(cache[book_url])
+            exit(0)
 
-                  if any(ext in href.lower() for ext in EXTENSIONS):
-                      candidates.append(href)
+        download_url = find_download_link(book_url)
 
-                  if "get.php" in href.lower():
-                      candidates.append(href)
+        filename = filename_from_url(download_url)
 
-                  if "/ads.php" in href.lower():
-                      candidates.append(href)
+        success = False
 
-              regex_patterns = [
-                  r'https?://[^\s"\']+get\.php[^\s"\']*',
-                  r'/get\.php[^\s"\']*',
-                  r'https?://[^\s"\']+\.(?:epub|pdf|mobi|azw3|fb2)',
-              ]
+        start_time = time.time()
 
-              for pattern in regex_patterns:
-                  matches = re.findall(pattern, html, re.I)
-                  candidates.extend(matches)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                print(f"\nAttempt {attempt}/{MAX_RETRIES}")
 
-              seen = set()
+                filename = download_with_resume(download_url, filename)
 
-              for candidate in candidates:
-                  full = urljoin(base_url, candidate)
+                cache[book_url] = filename
+                save_cache(cache)
 
-                  if full in seen:
-                      continue
+                success = True
+                break
 
-                  seen.add(full)
+            except requests.exceptions.ConnectionError:
+                print("Connection dropped")
 
-                  try:
-                      head = session.get(
-                          full,
-                          allow_redirects=True,
-                          timeout=30,
-                          stream=True
-                      )
+            except requests.exceptions.Timeout:
+                print("Timeout")
 
-                      content_type = head.headers.get("content-type", "").lower()
+            except Exception as e:
+                print(f"Error: {e}")
 
-                      if (
-                          "application" in content_type
-                          or "octet-stream" in content_type
-                          or any(ext in full.lower() for ext in EXTENSIONS)
-                      ):
-                          return full
+            if attempt < MAX_RETRIES:
+                wait = RETRY_DELAY * attempt
+                print(f"Retrying in {wait}s...")
+                time.sleep(wait)
 
-                  except:
-                      pass
+        if not success:
+            raise Exception("Download failed after retries")
 
-              return None
+        EOF
 
-          final_error = None
+    - name: Commit downloaded book
+      run: |
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
 
-          for attempt in range(1, MAX_RETRIES + 1):
-              try:
-                  print(f"Attempt {attempt}/{MAX_RETRIES}")
-                  print(f"URL: {BOOK_URL}")
-
-                  response = session.get(
-                      BOOK_URL,
-                      allow_redirects=True,
-                      stream=True,
-                      timeout=60
-                  )
-
-                  response.raise_for_status()
-
-                  first_chunk = next(response.iter_content(4096), b"")
-
-                  if not is_html(response, first_chunk):
-                      print("Direct file detected")
-
-                      filename = extract_filename(response, response.url)
-                      filepath = books_dir / filename
-
-                      with open(filepath, "wb") as f:
-                          if first_chunk:
-                              f.write(first_chunk)
-
-                          for chunk in response.iter_content(chunk_size=65536):
-                              if chunk:
-                                  f.write(chunk)
-
-                      if filepath.stat().st_size == 0:
-                          raise Exception("File is empty")
-
-                      cache[url_hash] = filename
-                      cache_file.write_text(
-                          json.dumps(cache, indent=2),
-                          encoding="utf-8"
-                      )
-
-                      print(f"Saved: {filepath}")
-                      break
-
-                  print("HTML page detected")
-
-                  html = first_chunk.decode("utf-8", errors="ignore")
-                  html += response.text
-
-                  download_link = find_download_link(html, response.url)
-
-                  if not download_link:
-                      print(html[:4000])
-                      raise Exception("No valid download link found")
-
-                  print(f"Download link: {download_link}")
-
-                  file_response = session.get(
-                      download_link,
-                      allow_redirects=True,
-                      stream=True,
-                      timeout=120
-                  )
-
-                  file_response.raise_for_status()
-
-                  filename = extract_filename(
-                      file_response,
-                      file_response.url
-                  )
-
-                  filepath = books_dir / filename
-
-                  save_response_content(file_response, filepath)
-
-                  cache[url_hash] = filename
-                  cache_file.write_text(
-                      json.dumps(cache, indent=2),
-                      encoding="utf-8"
-                  )
-
-                  print(f"Saved: {filepath}")
-                  break
-
-              except Exception as e:
-                  final_error = e
-                  print(f"ERROR: {e}")
-
-                  if attempt < MAX_RETRIES:
-                      wait = min(2 ** attempt, 30)
-                      print(f"Retrying in {wait}s")
-                      time.sleep(wait)
-
-          else:
-              raise final_error
-
-          PYTHON
-
-      - name: Commit files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add books download_cache.json
-
-          if git diff --cached --quiet; then
-            echo "Nothing to commit"
-            exit 0
-          fi
-
-          git commit -m "Add downloaded book"
-          git push
+        git add .
+        git diff --cached --quiet || git commit -m "Add downloaded book"
+        git push
