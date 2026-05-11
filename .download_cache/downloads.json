@@ -46,5 +46,11 @@
     "size": 7153923,
     "md5": "6fd8541bbd028676c4c9d9f38ea47b5f",
     "completed_at": 1778504865.584733
+  },
+  "https://cdn5.booksdl.lc/get.php?md5=44e646fdf2928d19acee51a122031765&key=60PYA11SR450KY2L": {
+    "path": "downloads/Compilers Principles, Techniques, and Tools, 2nd Ed.{Alfred V. Aho, Monica S. Lam, Ravi Sethi, Jeffrey D. Ullman}{106165431} libgen.li.pdf",
+    "size": 7788703,
+    "md5": "44e646fdf2928d19acee51a122031765",
+    "completed_at": 1778508515.8478708
   }
 }
