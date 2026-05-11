@@ -40,5 +40,11 @@
     "size": 27655434,
     "md5": "a8c480913764ef718b120b5d337609aa",
     "completed_at": 1778349723.3406544
+  },
+  "https://cdn3.booksdl.lc/get.php?md5=6fd8541bbd028676c4c9d9f38ea47b5f&key=U0ZHMDQFFKU5A6GS": {
+    "path": "downloads/Tim Roughgarden - Twenty Lectures on Algorithmic Game Theory (2016, Cambridge) - libgen.li.pdf",
+    "size": 7153923,
+    "md5": "6fd8541bbd028676c4c9d9f38ea47b5f",
+    "completed_at": 1778504865.584733
   }
 }
