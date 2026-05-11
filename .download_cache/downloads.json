@@ -52,5 +52,11 @@
     "size": 7788703,
     "md5": "44e646fdf2928d19acee51a122031765",
     "completed_at": 1778508515.8478708
+  },
+  "https://cdn2.booksdl.lc/get.php?md5=73db153465cc7d5ed82451cf20b1f1bc&key=9JGCZY139MWGWBR5": {
+    "path": "downloads/Robert Nystrom - Crafting Interpreters (2021, Genever Benning) - libgen.li.pdf",
+    "size": 30907609,
+    "md5": "73db153465cc7d5ed82451cf20b1f1bc",
+    "completed_at": 1778518076.7687943
   }
 }
