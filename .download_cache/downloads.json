@@ -58,5 +58,11 @@
     "size": 30907609,
     "md5": "73db153465cc7d5ed82451cf20b1f1bc",
     "completed_at": 1778518076.7687943
+  },
+  "https://cdn2.booksdl.lc/get.php?md5=9425ea01c7e218215ce096d8b3d2da64&key=SG0D28EZI0I43COM": {
+    "path": "downloads/Ian Goodfellow, Yoshua Bengio, Aaron Courville, Francis Bach - Deep Learning (Adaptive Computation and Machine Learning Series) (2017, MIT Press) - libgen.li.pdf",
+    "size": 14814839,
+    "md5": "9425ea01c7e218215ce096d8b3d2da64",
+    "completed_at": 1778518337.829174
   }
 }
