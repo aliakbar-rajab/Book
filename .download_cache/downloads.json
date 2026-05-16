@@ -64,5 +64,11 @@
     "size": 14814839,
     "md5": "9425ea01c7e218215ce096d8b3d2da64",
     "completed_at": 1778518337.829174
+  },
+  "https://cdn3.booksdl.lc/get.php?md5=6b3d1543ea6aee715be72a3869509b5b&key=FQ63ZE174SBKVDOX": {
+    "path": "downloads/[Sams Teach Yourself] Ben Forta - SQL in 10 Minutes a Day, Sams Teach Yourself (2018, Pearson Education (US)) - libgen.li.pdf",
+    "size": 3441600,
+    "md5": "6b3d1543ea6aee715be72a3869509b5b",
+    "completed_at": 1778924030.6992884
   }
 }
