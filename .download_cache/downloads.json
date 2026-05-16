@@ -70,5 +70,11 @@
     "size": 3441600,
     "md5": "6b3d1543ea6aee715be72a3869509b5b",
     "completed_at": 1778924030.6992884
+  },
+  "https://cdn3.booksdl.lc/get.php?md5=0c3362a195b8c15bf2ae0da477e90996&key=5KSLKUOTVAJ2QL2C": {
+    "path": "downloads/Kleinberg, Jon_ Tardos, \u00c3\u0089va - Algorithm design (2013_2014, Pearson) - libgen.li.pdf",
+    "size": 4819726,
+    "md5": "0c3362a195b8c15bf2ae0da477e90996",
+    "completed_at": 1778950145.5401368
   }
 }
