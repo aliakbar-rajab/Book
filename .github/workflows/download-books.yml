@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       book_url:
-        description: 'Book download URL or Libgen MD5 hash'
+        description: 'Book URL, Libgen MD5 hash, or library.lol URL'
         required: true
         type: string
       expected_md5:
@@ -24,60 +24,92 @@ jobs:
   download:
     runs-on: ubuntu-latest
     timeout-minutes: 350
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          
+          cache: 'pip'
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests beautifulsoup4 lxml tqdm urllib3
-          
+          python -m pip install --upgrade pip --quiet
+          pip install --quiet requests beautifulsoup4 lxml tqdm urllib3
+
       - name: Restore download cache
+        id: restore-cache
         uses: actions/cache@v4
         with:
-          path: |
-            .download_cache
-          key: libgen-cache-${{ github.run_id }}
+          path: .download_cache
+          key: libgen-cache-${{ hashFiles('.download_cache/downloads.json') }}
           restore-keys: |
             libgen-cache-
-            
+
       - name: Download book
+        id: download
         env:
           BOOK_URL: ${{ github.event.inputs.book_url }}
           EXPECTED_MD5: ${{ github.event.inputs.expected_md5 }}
           OUTPUT_DIR: ${{ github.event.inputs.output_dir }}
-        run: python scripts/download.py
-        
+        run: |
+          python scripts/download.py
+          echo "status=success" >> $GITHUB_OUTPUT
+
       - name: Save download cache
         if: always()
         uses: actions/cache/save@v4
         with:
           path: .download_cache
-          key: libgen-cache-${{ github.run_id }}
-          
-      - name: Commit downloaded book
+          key: libgen-cache-${{ hashFiles('.download_cache/downloads.json') }}
+
+      # Backup: upload as artifact in case git push fails
+      - name: Upload as artifact (backup)
+        if: steps.download.outputs.status == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloaded-book-${{ github.run_id }}
+          path: ${{ github.event.inputs.output_dir }}/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Commit and push downloaded book
+        if: steps.download.outputs.status == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add -A
-          
+
           if git diff --cached --quiet; then
             echo "Nothing new to commit"
-          else
-            git commit -m "📚 Download: ${{ github.event.inputs.book_url }}"
-            
-            for i in 1 2 3; do
-              git pull --rebase origin ${{ github.ref_name }} && git push && break
-              echo "Push attempt $i failed, retrying..."
-              sleep 5
-            done
+            exit 0
           fi
+
+          # Sanitize commit message
+          SAFE_URL=$(echo "${{ github.event.inputs.book_url }}" | tr -dc '[:print:]' | cut -c1-100)
+          git commit -m "📚 Download: ${SAFE_URL}"
+
+          # Robust push with rebase retry
+          MAX_ATTEMPTS=5
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            echo "Push attempt $i/$MAX_ATTEMPTS..."
+            git fetch origin ${{ github.ref_name }} 2>/dev/null || true
+            git rebase origin/${{ github.ref_name }} 2>/dev/null || true
+            if git push origin ${{ github.ref_name }}; then
+              echo "✓ Push successful"
+              exit 0
+            fi
+            WAIT=$((i * 5))
+            echo "Push failed, waiting ${WAIT}s..."
+            sleep $WAIT
+          done
+
+          echo "⚠ All push attempts failed - book is saved as artifact"
+          exit 0  # Don't fail the workflow; artifact was uploaded above
